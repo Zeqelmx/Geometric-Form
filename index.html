@@ -497,12 +497,24 @@
             return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
         }
 
-        // Forma paramétrica base generada a partir de los inputs
+        // Fusión suave (Unión orgánica)
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+
+        // Resta suave (Espacios negativos orgánicos y fluidos)
+        float smax(float a, float b, float k) {
+            float h = clamp(0.5 - 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) + k * h * (1.0 - h);
+        }
+
+        // Forma paramétrica base Premium de alta variabilidad
         float shapeBase(vec2 p) {
             // Rotación general por capa/tiempo
             p *= rot(uRotation * uTime);
             
-            // Simetría Radial (Repetición Geométrica)
+            // Simetría Radial Dinámica
             float sym = floor(uSymmetry);
             if(sym > 1.0) {
                 float a = atan(p.y, p.x);
@@ -514,20 +526,30 @@
             
             p = abs(p); // Simetría bilateral dentro del cuadrante
             
-            // Estructura principal sólida (Cuerpo de la forma)
-            float mainBox = sdRoundBox(p, vec2(uSpacing), uCornerRadius);
+            // Factor de suavizado para fusiones booleanas
+            float smoothFactor = uCornerRadius * 2.0 + 0.02; // +0.02 previene división por cero
             
-            // Brazos extensores para interconexión
-            float arm = sdRoundBox(p - vec2(uSpacing, 0.0), vec2(uSpacing, uThickness), uCornerRadius);
-            float d = min(mainBox, arm);
+            // 1. Pilar central / brazo principal extendido
+            float d1 = sdRoundBox(p - vec2(uSpacing * 0.6, 0.0), vec2(uSpacing, uThickness), uCornerRadius);
             
-            // Espacio Negativo 1: Corte central
-            float centerHole = sdRoundBox(p, vec2(uSpacing * 0.4), uCornerRadius * 0.5);
-            d = max(d, -centerHole);
+            // 2. Elemento transversal rotado (Crea entrelazados tipo nudo/estrella)
+            vec2 pRot = p * rot(1.04719755); // 60 grados (PI/3)
+            float d2 = sdRoundBox(pRot - vec2(uSpacing * 0.4, 0.0), vec2(uSpacing * 0.7, uThickness * 1.5), uCornerRadius);
             
-            // Espacio Negativo 2: Corte en las esquinas que crea la figura estilo puzzle
-            float cornerHole = length(p - vec2(uSpacing, uSpacing)) - uThickness * 1.5;
-            d = max(d, -cornerHole);
+            // Mezcla orgánica estructurada
+            float d = smin(d1, d2, smoothFactor);
+            
+            // 3. Anillo / Órbita exterior que ancla la simetría
+            float ring = abs(length(p) - uSpacing) - uThickness * 0.5;
+            d = smin(d, ring, smoothFactor);
+            
+            // 4. Corte de espacio negativo 1: Moldeado curvo exterior
+            float hole1 = length(p - vec2(uSpacing * 0.9, uSpacing * 0.8)) - uSpacing * 0.45;
+            d = smax(d, -hole1, smoothFactor);
+            
+            // 5. Corte de espacio negativo 2: Perforaciones mecánicas internas
+            float hole2 = length(p - vec2(uSpacing * 0.4, 0.0)) - uThickness * 0.7;
+            d = smax(d, -hole2, smoothFactor * 0.5);
             
             return d;
         }
